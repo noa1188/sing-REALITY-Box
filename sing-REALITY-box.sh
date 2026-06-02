@@ -104,7 +104,8 @@ if [ -f "/root/reality.json" ] && [ -f "/root/sing-box" ] && [ -f "/root/public.
 			short_id=$(jq -r '.inbounds[0].tls.reality.short_id[0]' /root/reality.json)
 			
 			# Retrieve the server IP address
-			server_ip=$(curl -s https://api.ipify.org)
+			server_ip=$(curl -s4 https://api.ipify.org)
+			if [ -z "$server_ip" ]; then server_ip=$(curl -s4 https://ifconfig.me); fi
 			
 			# Generate the link
 			server_link="vless://$uuid@$server_ip:$current_listen_port?encryption=none&flow=xtls-rprx-vision&security=reality&sni=$current_server_name&fp=chrome&pbk=$public_key&sid=$short_id&type=tcp&headerType=none#SING-BOX-TCP"
@@ -133,7 +134,8 @@ if [ -f "/root/reality.json" ] && [ -f "/root/sing-box" ] && [ -f "/root/public.
 			short_id=$(jq -r '.inbounds[0].tls.reality.short_id[0]' /root/reality.json)
 			
 			# Retrieve the server IP address
-			server_ip=$(curl -s https://api.ipify.org)
+			server_ip=$(curl -s4 https://api.ipify.org)
+			if [ -z "$server_ip" ]; then server_ip=$(curl -s4 https://ifconfig.me); fi
 			
 			# Generate the link
 			server_link="vless://$uuid@$server_ip:$current_listen_port?encryption=none&flow=xtls-rprx-vision&security=reality&sni=$current_server_name&fp=chrome&pbk=$public_key&sid=$short_id&type=tcp&headerType=none#SING-BOX-TCP"
@@ -152,8 +154,10 @@ if [ -f "/root/reality.json" ] && [ -f "/root/sing-box" ] && [ -f "/root/public.
 			current_version_tag=$(/root/sing-box version | grep 'sing-box version' | awk '{print $3}')
 
 			# Fetch the latest stable and alpha version tags
-			latest_stable_version=$(curl -s "https://api.github.com/repos/SagerNet/sing-box/releases" | jq -r '[.[] | select(.prerelease==false)][0].tag_name')
-			latest_alpha_version=$(curl -s "https://api.github.com/repos/SagerNet/sing-box/releases" | jq -r '[.[] | select(.prerelease==true)][0].tag_name')
+			latest_stable_version=$(curl -s "https://api.github.com/repos/SagerNet/sing-box/releases" | jq -r '[.[] | select(.prerelease==false)][0].tag_name' 2>/dev/null)
+			if [ -z "$latest_stable_version" ] || [ "$latest_stable_version" == "null" ]; then latest_stable_version="v1.13.12"; fi
+			latest_alpha_version=$(curl -s "https://api.github.com/repos/SagerNet/sing-box/releases" | jq -r '[.[] | select(.prerelease==true)][0].tag_name' 2>/dev/null)
+			if [ -z "$latest_alpha_version" ] || [ "$latest_alpha_version" == "null" ]; then latest_alpha_version="v1.14.0-alpha.27"; fi
 
 			# Determine current version type (stable or alpha)
 			if [[ $current_version_tag == *"-alpha"* ]]; then
@@ -182,6 +186,10 @@ if [ -f "/root/reality.json" ] && [ -f "/root/sing-box" ] && [ -f "/root/public.
 
 			curl -sLo "/root/${package_name}.tar.gz" "$url"
 			tar -xzf "/root/${package_name}.tar.gz" -C /root
+			if [ $? -ne 0 ]; then
+				echo "Failed to extract the package. Aborting."
+				exit 1
+			fi
 			mv "/root/${package_name}/sing-box" /root/sing-box
 
 			# Cleanup the package
@@ -235,11 +243,13 @@ if [ -f "/root/reality.json" ] && [ -f "/root/sing-box" ] && [ -f "/root/public.
 		if [ "$version_choice" -eq 2 ]; then
 			echo "Installing Alpha version..."
    			echo ""
-			latest_version_tag=$(curl -s "https://api.github.com/repos/SagerNet/sing-box/releases" | jq -r '[.[] | select(.prerelease==true)][0].tag_name')
+			latest_version_tag=$(curl -s "https://api.github.com/repos/SagerNet/sing-box/releases" | jq -r '[.[] | select(.prerelease==true)][0].tag_name' 2>/dev/null)
+			if [ -z "$latest_version_tag" ] || [ "$latest_version_tag" == "null" ]; then latest_version_tag="v1.14.0-alpha.27"; fi
 		else
 			echo "Installing Stable version..."
    			echo ""
-			latest_version_tag=$(curl -s "https://api.github.com/repos/SagerNet/sing-box/releases" | jq -r '[.[] | select(.prerelease==false)][0].tag_name')
+			latest_version_tag=$(curl -s "https://api.github.com/repos/SagerNet/sing-box/releases" | jq -r '[.[] | select(.prerelease==false)][0].tag_name' 2>/dev/null)
+			if [ -z "$latest_version_tag" ] || [ "$latest_version_tag" == "null" ]; then latest_version_tag="v1.13.12"; fi
 		fi
 
 		# No need to fetch the latest version tag again, it's already set based on user choice
@@ -277,6 +287,10 @@ curl -sLo "/root/${package_name}.tar.gz" "$url"
 
 # Extract the package and move the binary to /root
 tar -xzf "/root/${package_name}.tar.gz" -C /root
+if [ $? -ne 0 ]; then
+    echo "Failed to extract the package. Aborting."
+    exit 1
+fi
 mv "/root/${package_name}/sing-box" /root/
 
 # Cleanup the package
@@ -310,12 +324,15 @@ read -p "Enter desired listen port (default: 443): " listen_port
 listen_port=${listen_port:-443}
 echo ""
 # Ask for server name (sni)
-read -p "Enter server name/SNI (default: telewebion.com): " server_name
+read -p "Enter server name/SNI (default: play.google.com): " server_name
 echo ""
-server_name=${server_name:-telewebion.com}
+server_name=${server_name:-play.google.com}
 
 # Retrieve the server IP address
-server_ip=$(curl -s https://api.ipify.org)
+server_ip=$(curl -s4 https://api.ipify.org)
+if [ -z "$server_ip" ]; then
+    server_ip=$(curl -s4 https://ifconfig.me)
+fi
 
 # Create reality.json using jq
 jq -n --arg listen_port "$listen_port" --arg server_name "$server_name" --arg private_key "$private_key" --arg short_id "$short_id" --arg uuid "$uuid" --arg server_ip "$server_ip" '{
@@ -329,9 +346,6 @@ jq -n --arg listen_port "$listen_port" --arg server_name "$server_name" --arg pr
       "tag": "vless-in",
       "listen": "::",
       "listen_port": ($listen_port | tonumber),
-      "sniff": true,
-      "sniff_override_destination": true,
-      "domain_strategy": "ipv4_only",
       "users": [
         {
           "uuid": $uuid,
@@ -362,7 +376,21 @@ jq -n --arg listen_port "$listen_port" --arg server_name "$server_name" --arg pr
       "type": "block",
       "tag": "block"
     }
-  ]
+  ],
+  "route": {
+    "rules": [
+      {
+        "inbound": "vless-in",
+        "action": "sniff"
+      },
+      {
+        "inbound": "vless-in",
+        "action": "resolve",
+        "strategy": "ipv4_only"
+      }
+    ],
+    "auto_detect_interface": true
+  }
 }' > /root/reality.json
 
 # Create sing-box.service
@@ -412,6 +440,8 @@ if /root/sing-box check -c /root/reality.json; then
     echo ""
     echo "$server_link"
     echo ""
+    echo "⚠️  IMPORTANT: Please ensure you are using the LATEST version of your client."
+    echo "Older clients may fail to connect due to TLS ClientHello fingerprinting updates in sing-box."
     echo ""
 else
     echo "Error in configuration. Aborting."
